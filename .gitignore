@@ -1,0 +1,6 @@
+instances
+__pycache__
+.idea
+*.lp
+*.ilp
+*.log
