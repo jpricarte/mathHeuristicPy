@@ -119,14 +119,14 @@ def add_to_cluster(u):
         current_cluster.clear()
 
 
-def divide_tree_bu(t, node, up=None):
+def divide_tree_bu(g, t, node, up=None):
     clusters_by_node[node] = [node]
     if len(t[node]) == 1:  # Only one neighbor, is a leaf
         return
     for child in t[node]:  # Generate children's clusters
         if child == up:
             continue
-        divide_tree_bu(t, child, node)
+        divide_tree_bu(g, t, child, node)
     for child in t[node]:  # Merge clusters
         if child == up:
             continue
@@ -134,20 +134,21 @@ def divide_tree_bu(t, node, up=None):
             clusters_by_node[node] += clusters_by_node[child]
         if len(clusters_by_node[node]) >= cluster_size:
             # Create new node
-            m = t.number_of_nodes()
-            new_node = t.add_node(m, weight=0, in_solution=True, father=node)
+            new_node = t.number_of_nodes()
+            g.add_node(new_node, weight=0, in_solution=True, father=node)
             # Connect new node to original
-            t.add_edge(node, new_node)
+            g.add_edge(node, new_node)
             # for each child that is in cluster, change edge
-            for c in [n for n in clusters_by_node[node] if n in child[node]]:
-                t.add_edge(new_node, c, weight=t[node][c]['weight'], in_solution=True, father=None)
-                t.remove_edge(node, c)
+            for c in [n for n in clusters_by_node[node] if n in t[node]]:
+                g.add_edge(new_node, c, weight=t[node][c]['weight'], in_solution=True, father=None)
+                g.remove_edge(node, c)
             # add cluster to clusters
             new_cluster = [n for n in clusters_by_node[node] if n != node]
-            new_cluster += new_node
+            new_cluster.append(new_node)
             clusters.append(new_cluster)
             for n in new_cluster:
-                in_cluster[n] = True
+                if n < n_vertex:
+                    in_cluster[n] = True
             clusters_by_node[node] = [node]
     # Push the final cluster to clusters
     if up is None and clusters_by_node[node] != [node]:
@@ -259,7 +260,7 @@ def main(print_logs=False, plot_tree=False):
     # divide in sub-clusters
     for node in graph.nodes():
         dummy_nodes[node] = set()
-    divide_tree_bu(tree, root)
+    divide_tree_bu(graph, tree, root)
     for cluster in clusters:
         print(cluster)
 
