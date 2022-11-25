@@ -18,7 +18,7 @@ def read_instance(file_name: str) -> (int, int, nx.Graph, [[float]]):
         for _ in range(m):
             (u, v, l) = map(lambda x: float(x), instance_file.readline().split())
             u, v = int(u), int(v)
-            g.add_edge(u, v, weight=l, in_solution=False)
+            g.add_edge(u, v, weight=l, in_solution=False, father=None)
         for i in range(n):
             for j in range(i, n):
                 if j == i:
@@ -133,11 +133,21 @@ def divide_tree_bu(t, node, up=None):
         if len(clusters_by_node[child]) < cluster_size:
             clusters_by_node[node] += clusters_by_node[child]
         if len(clusters_by_node[node]) >= cluster_size:
-            # Deep copy of cluster and create new cluster
-            clusters.append([n for n in clusters_by_node[node]])
-            for n in clusters_by_node[node]:
+            # Create new node
+            m = t.number_of_nodes()
+            new_node = t.add_node(m, weight=0, in_solution=True, father=node)
+            # Connect new node to original
+            t.add_edge(node, new_node)
+            # for each child that is in cluster, change edge
+            for c in [n for n in clusters_by_node[node] if n in child[node]]:
+                t.add_edge(new_node, c, weight=t[node][c]['weight'], in_solution=True, father=None)
+                t.remove_edge(node, c)
+            # add cluster to clusters
+            new_cluster = [n for n in clusters_by_node[node] if n != node]
+            new_cluster += new_node
+            clusters.append(new_cluster)
+            for n in new_cluster:
                 in_cluster[n] = True
-            # TODO: instead of copying node, should create a new dummy node
             clusters_by_node[node] = [node]
     # Push the final cluster to clusters
     if up is None and clusters_by_node[node] != [node]:
