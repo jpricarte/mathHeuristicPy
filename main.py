@@ -146,9 +146,8 @@ def divide_tree_bu(t, node, up=None):
             in_cluster[n] = True
 
 
-def create_dummies(g: nx.Graph, ns: [int], cs: [[int]]):
+def create_dummies(g: nx.Graph, ns: [int], cs: [[int]], print_logs=False):
     # Create dummies for each node in nodes_list
-    # TODO: change is_in_cluster to a dict
     is_in_cluster = {n: False for n in ns}
     nodes_list = list(ns.keys())
     for n in nodes_list:
@@ -167,13 +166,18 @@ def create_dummies(g: nx.Graph, ns: [int], cs: [[int]]):
                     neighbors = list(g[n].keys())
                     for neighbor in neighbors:
                         if neighbor in c:
-                            g.add_edge(neighbor, dummy_node, weight=g[n][neighbor]['weight'], in_solution=True)
+                            if print_logs:
+                                print("++++")
+                                print(f"creating edge {neighbor} {dummy_node}")
+                                print(f"deleting edge {neighbor} {n}")
+                            g.add_edge(neighbor, dummy_node, weight=g[n][neighbor]['weight'], in_solution=g[n][neighbor]['in_solution'])
                             g.remove_edge(n, neighbor)
-                    # Add a 0-cost edge between the node and its dummy, and change n for the dummy
+                    # Add a 0-cost edge between the node and its dummy, and changes n to dummy_node in cluster
                     g.add_edge(n, dummy_node, weight=0, in_solution=True)
                     for i in range(len(c)):
                         if c[i] == n:
                             c[i] = dummy_node
+                            break
 
 
 def select_two_clusters(g, t, c1, c2):
@@ -200,12 +204,14 @@ def select_two_clusters(g, t, c1, c2):
 
 def add_requirements(t, st, base_node, curr_node, prev_node, subproblem_req, requirements):
     list_of_fathers = nx.get_node_attributes(t, 'father')
-    if list_of_fathers[base_node] or list_of_fathers[curr_node]:
+    if list_of_fathers[base_node]:
         for node in st.nodes():
             subproblem_req[base_node][node] += 0.0
     else:
         for node in st.nodes():
             if list_of_fathers[node] is not None:
+                subproblem_req[base_node][node] += 0.0
+            elif list_of_fathers[curr_node] is not None:
                 subproblem_req[base_node][node] += 0.0
             elif node > base_node:
                 subproblem_req[base_node][node] += \
@@ -299,6 +305,8 @@ def main(print_logs=False, plot_tree=False):
         dummy_nodes[node] = set()
     divide_tree_bu(tree, root)
     create_dummies(graph, graph.nodes(), clusters)
+    # Creating struct to record values
+    last_solution: {(int, int), float} = {}
 
     improved = True
     # Iteration
@@ -338,46 +346,81 @@ def main(print_logs=False, plot_tree=False):
                 o_dict = get_o_u(subgraph, sp_req)
                 x_dict, y_dict, f_dict = defining_vars(subgraph)
                 # Generate MIP
-                problem = generate_problem(subgraph, sp_req, o_dict, x_dict, y_dict, f_dict)
+                problem = generate_problem(subgraph, sp_req, o_dict, x_dict, y_dict, f_dict, write_subproblem=True)
                 # Calling solver
                 solve_problem(problem)
-                new_cost = value(problem.objective)
-                print(LpStatus[problem.status] + ',' + str(new_cost))
-                # updating graph
-                for e in subgraph.edges():
-                    if x_dict[e].varValue == 1.0:
-                        graph.edges[e]['in_solution'] = True
-                    else:
-                        graph.edges[e]['in_solution'] = False
+                solution_cost = value(problem.objective)
+                print(LpStatus[problem.status] + ',' + str(solution_cost))
+                diff = 0.0
+                new_value = 0.0
+                old_value = iterative_cost
+                if (i, j) in last_solution:
+                    new_value = iterative_cost - last_solution[(i, j)] + solution_cost
+                if old_value - new_value > 1E-5:
+                    last_solution[(i, j)] = solution_cost
+                    iterative_cost = new_value
+                    # updating graph
+                    for e in subgraph.edges():
+                        if x_dict[e].varValue == 1.0:
+                            if not graph.edges[e]['in_solution']:
+                                improved = True
+                            graph.edges[e]['in_solution'] = True
+                        else:
+                            graph.edges[e]['in_solution'] = False
+                    tree = nx.subgraph_view(graph, filter_edge=filter_solution)
+                    if plot_tree:
+                        nx.draw(subtree, with_labels=True, node_color="tab:green")
+                        plt.show()
+                    c1, c2 = redivide_tree(subtree)
+                    create_dummies(graph, {c: None for c in merged_cluster}, [c1, c2])
 
-                c1, c2 = redivide_tree(subtree)
-                create_dummies(graph, {c: None for c in merged_cluster}, [c1, c2])
-                merged_cluster = c1 + list(set(c2) - set(c1))
-                subtree = tree.subgraph(merged_cluster)
+                    merged_cluster = c1 + c2
+                    subtree = tree.subgraph(merged_cluster)
 
-                if not nx.is_tree(subtree):
-                    print("subtree of solution not valid")
+                    if not nx.is_tree(subtree):
+                        print("subtree of solution not valid")
+                        print(c1)
+                        print(c2)
+                        if print_logs:
+                            for e in tree.edges():
+                                print(e[0], e[1])
+                        if plot_tree:
+                            nx.draw(subtree, with_labels=True, node_color="tab:red")
+                            plt.show()
+                        return
+                    if not nx.is_tree(tree.subgraph(c1)):
+                        print("error in division")
+                    if not nx.is_tree(tree.subgraph(c2)):
+                        print("error in division")
+
+                    print("++++")
                     print(c1)
                     print(c2)
-                    if plot_tree:
-                        nx.draw(subtree, with_labels=True, node_color="tab:red")
-                        plt.show()
-                        return
-                if not nx.is_tree(tree.subgraph(c1)):
-                    print("error in division")
-                if not nx.is_tree(tree.subgraph(c2)):
-                    print("error in division")
-                for x in range(len(clusters)):
-                    if clusters[x] == first:
-                        clusters[x] = c1
-                    if clusters[x] == second:
-                        clusters[x] = c2
-    # TODO: remove dummy nodes
+                    print("++++")
+                    for x in range(len(clusters)):
+                        if clusters[x] == first:
+                            clusters[x] = c1
+                        if clusters[x] == second:
+                            clusters[x] = c2
+    k = list(graph.nodes().keys())
+    k.sort()
+    # print(len(k))
+    # print(k)
+    for i in range(len(k)-1, 0, -1):
+        curr_node = k[i]
+        if tree.nodes[curr_node]['father'] is not None:
+            father = tree.nodes[curr_node]['father']
+            print(f'merging {curr_node} in {father}')
+            nx.contracted_nodes(graph, father, curr_node, self_loops=False, copy=False)
+    # k = list(graph.nodes().keys())
+    # k.sort()
+    # print(k)
     calculate_cost(tree, req)
+    print(f'iterative cost: {iterative_cost}')
 
 
 if __name__ == '__main__':
     # Reading instance
-    n_vertex, n_edges, graph, req = read_instance('./instances/zoo-MRCT/Colt_4.in')
+    n_vertex, n_edges, graph, req = read_instance('./instances/tests/berry35.in')
     in_cluster = [False for _ in range(n_vertex)]
-    main(plot_tree=True)
+    main(plot_tree=False, print_logs=False)
