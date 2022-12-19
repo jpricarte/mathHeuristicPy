@@ -313,7 +313,7 @@ def main(print_logs=False, plot_tree=False):
     while improved:
         improved = False
         for i in range(len(clusters)):
-            for j in range(len(clusters)):
+            for j in range(i, len(clusters)):
                 if i == j:
                     continue
                 first = clusters[i]
@@ -351,57 +351,65 @@ def main(print_logs=False, plot_tree=False):
                 solve_problem(problem)
                 solution_cost = value(problem.objective)
                 print(LpStatus[problem.status] + ',' + str(solution_cost))
-                diff = 0.0
-                new_value = 0.0
-                old_value = iterative_cost
                 if (i, j) in last_solution:
-                    new_value = iterative_cost - last_solution[(i, j)] + solution_cost
-                if old_value - new_value > 1E-5:
+                    if abs(last_solution[(i, j)] - solution_cost) > 1E-5:
+                        last_solution[(i, j)] = solution_cost
+                        improved = True
+                    else:
+                        print("Optimized but same result was found")
+                else:
                     last_solution[(i, j)] = solution_cost
-                    iterative_cost = new_value
-                    # updating graph
-                    for e in subgraph.edges():
-                        if x_dict[e].varValue == 1.0:
-                            if not graph.edges[e]['in_solution']:
-                                improved = True
-                            graph.edges[e]['in_solution'] = True
-                        else:
-                            graph.edges[e]['in_solution'] = False
-                    tree = nx.subgraph_view(graph, filter_edge=filter_solution)
-                    if plot_tree:
-                        nx.draw(subtree, with_labels=True, node_color="tab:green")
-                        plt.show()
-                    c1, c2 = redivide_tree(subtree)
-                    create_dummies(graph, {c: None for c in merged_cluster}, [c1, c2])
+                    improved = True
+                # updating graph
+                for e in subgraph.edges():
+                    if x_dict[e].varValue == 1.0:
+                        graph.edges[e]['in_solution'] = True
+                    else:
+                        graph.edges[e]['in_solution'] = False
+                tree = nx.subgraph_view(graph, filter_edge=filter_solution)
+                if plot_tree:
+                    nx.draw(subtree, with_labels=True, node_color="tab:green")
+                    plt.show()
+                c1, c2 = redivide_tree(subtree)
+                # print("++++")
+                # print(c1)
+                # print(c2)
+                # print("++++")
+                if abs(len(c1) - len(c2)) > 3:
+                    print("Difference between clusters is too big")
+                    nx.draw(subtree, with_labels=True, node_color="tab:red")
+                    plt.show()
+                    return
+                create_dummies(graph, {c: None for c in merged_cluster}, [c1, c2])
 
-                    merged_cluster = c1 + c2
-                    subtree = tree.subgraph(merged_cluster)
-
-                    if not nx.is_tree(subtree):
-                        print("subtree of solution not valid")
-                        print(c1)
-                        print(c2)
-                        if print_logs:
-                            for e in tree.edges():
-                                print(e[0], e[1])
-                        if plot_tree:
-                            nx.draw(subtree, with_labels=True, node_color="tab:red")
-                            plt.show()
-                        return
-                    if not nx.is_tree(tree.subgraph(c1)):
-                        print("error in division")
-                    if not nx.is_tree(tree.subgraph(c2)):
-                        print("error in division")
-
-                    print("++++")
+                # Debug only, remove all until the END comment
+                merged_cluster = c1 + c2
+                subtree = tree.subgraph(merged_cluster)
+                if not nx.is_tree(subtree):
+                    print("subtree of solution not valid")
                     print(c1)
                     print(c2)
-                    print("++++")
-                    for x in range(len(clusters)):
-                        if clusters[x] == first:
-                            clusters[x] = c1
-                        if clusters[x] == second:
-                            clusters[x] = c2
+                    if print_logs:
+                        for e in tree.edges():
+                            print(e[0], e[1])
+                    if plot_tree:
+                        nx.draw(subtree, with_labels=True, node_color="tab:red")
+                        plt.show()
+                    return
+                if not nx.is_tree(tree.subgraph(c1)):
+                    print("error in division")
+                if not nx.is_tree(tree.subgraph(c2)):
+                    print("error in division")
+                # END
+
+                clusters[i] = c1
+                clusters[j] = c2
+
+                # print("++++")
+                # print(c1)
+                # print(c2)
+                # print("++++")
+
     k = list(graph.nodes().keys())
     k.sort()
     # print(len(k))
@@ -416,11 +424,10 @@ def main(print_logs=False, plot_tree=False):
     # k.sort()
     # print(k)
     calculate_cost(tree, req)
-    print(f'iterative cost: {iterative_cost}')
 
 
 if __name__ == '__main__':
     # Reading instance
-    n_vertex, n_edges, graph, req = read_instance('./instances/tests/berry35.in')
+    n_vertex, n_edges, graph, req = read_instance('./instances/tests/STEIC2.in')
     in_cluster = [False for _ in range(n_vertex)]
     main(plot_tree=False, print_logs=False)
