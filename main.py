@@ -83,16 +83,21 @@ def choose_root(g, n, r):
     return best_tree, best_root, best_cost
 
 
-def calculate_cost(t, r):
+'''
+    calculate_cost(t, r): Calculate cost using the cost definition
+    sum_{i in N} sum_{j in N}
+'''
+def calculate_cost(t, r, print_cost=False):
     cost = 0.0
     for i in t.nodes():
         path_list = nx.shortest_path(t, source=i)
         for j in t.nodes():
             if j == i:
                 continue
-            requirement = max(r[0][len(path_list[j]) - 1], r[len(path_list[j]) - 1][0])
+            requirement = max(r[i][j], r[j][i])
             cost += get_path_cost(t, path_list[j]) * requirement
-    print("communication cost:", cost)
+    if print_cost:
+        print("communication cost:", cost)
     return cost
 
 
@@ -291,12 +296,13 @@ def redivide_tree(st):
 
 
 def main(print_logs=False, plot_tree=False):
+    global graph
     # To small and some medium size instances, we can change the lines bellow to solution_by_dijkstra()
     # Warning: instead of paths, solution_by_dijkstra() returns the tree
     paths, root, _ = choose_root(graph, n_vertex, req)
     update_solution_from_path_list(graph, paths)
     tree = nx.subgraph_view(graph, filter_edge=filter_solution)
-    iterative_cost = calculate_cost(tree, req)
+    iterative_cost = calculate_cost(tree, req, True)
     if print_logs:
         for e in tree.edges():
             print(e[0], e[1])
@@ -326,6 +332,8 @@ def main(print_logs=False, plot_tree=False):
                     print("-------------")
                     print(f"{i}: {first}")
                     print(f"{j}: {second}")
+                # copy graph to go back if needed
+                bk_graph = graph.copy()
                 # remove possible dummy if connected by one
                 if nodes_to_merge is not None:
                     nx.contracted_nodes(graph, nodes_to_merge[0], nodes_to_merge[1], self_loops=False, copy=False)
@@ -353,16 +361,16 @@ def main(print_logs=False, plot_tree=False):
                 solve_problem(problem)
                 solution_cost = value(problem.objective)
                 print(LpStatus[problem.status] + ',' + str(solution_cost))
-                if (i, j) in last_solution:
-                    if abs(last_solution[(i, j)] - solution_cost) > 1E-5:
-                        iterative_cost += solution_cost - last_solution[(i, j)]
-                        last_solution[(i, j)] = solution_cost
-                        improved = True
-                    else:
-                        print("Optimized but same result was found")
-                else:
+                if (i, j) not in last_solution:
+                    last_solution[(i, j)] = calculate_cost(subtree, sp_req)
+                if abs(last_solution[(i, j)] - solution_cost) > 1E-5:
                     last_solution[(i, j)] = solution_cost
                     improved = True
+                else:
+                    print("Optimized but same result was found")
+                    graph = bk_graph
+                    tree = nx.subgraph_view(graph, filter_edge=filter_solution)
+                    continue
                 # updating graph
                 for e in subgraph.edges():
                     if x_dict[e].varValue == 1.0:
@@ -374,11 +382,6 @@ def main(print_logs=False, plot_tree=False):
                     nx.draw(subtree, with_labels=True, node_color="tab:green")
                     plt.show()
                 c1, c2 = redivide_tree(subtree)
-                if abs(len(c1) - len(c2)) > 3:
-                    print("Difference between clusters is too big")
-                    nx.draw(subtree, with_labels=True, node_color="tab:red")
-                    plt.show()
-                    return
                 create_dummies(graph, {c: None for c in merged_cluster}, [c1, c2])
 
                 # Debug only, remove all until the END comment
@@ -406,8 +409,6 @@ def main(print_logs=False, plot_tree=False):
 
     k = list(graph.nodes().keys())
     k.sort()
-    # print(len(k))
-    # print(k)
     for i in range(len(k)-1, 0, -1):
         curr_node = k[i]
         if tree.nodes[curr_node]['father'] is not None:
@@ -415,7 +416,7 @@ def main(print_logs=False, plot_tree=False):
             print(f'merging {curr_node} in {father}')
             nx.contracted_nodes(graph, father, curr_node, self_loops=False, copy=False)
 
-    calculate_cost(tree, req)
+    calculate_cost(tree, req, True)
     print("Iterative cost:", iterative_cost)
 
 
