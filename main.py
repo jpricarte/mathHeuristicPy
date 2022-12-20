@@ -8,7 +8,7 @@ current_cluster = []
 in_cluster = []
 clusters_by_node = {}
 dummy_nodes = {}
-
+curr_biggest = 0
 
 def read_instance(file_name: str) -> (int, int, nx.Graph, [[float]]):
     g = nx.Graph()
@@ -18,7 +18,7 @@ def read_instance(file_name: str) -> (int, int, nx.Graph, [[float]]):
         for _ in range(m):
             (u, v, l) = map(lambda x: float(x), instance_file.readline().split())
             u, v = int(u), int(v)
-            g.add_edge(u, v, weight=l, in_solution=False, father=None)
+            g.add_edge(u, v, weight=l, in_solution=False)
         for i in range(n):
             for j in range(i, n):
                 if j == i:
@@ -28,6 +28,7 @@ def read_instance(file_name: str) -> (int, int, nx.Graph, [[float]]):
                     r[i][j] = requirement
                     r[j][i] = 0.0
 
+    nx.set_node_attributes(g, None, name='father')
     return n, m, g, r
 
 
@@ -119,36 +120,24 @@ def add_to_cluster(u):
         current_cluster.clear()
 
 
-def divide_tree_bu(g, t, node, up=None):
+def divide_tree_bu(t, node, up=None):
     clusters_by_node[node] = [node]
     if len(t[node]) == 1:  # Only one neighbor, is a leaf
         return
     for child in t[node]:  # Generate children's clusters
         if child == up:
             continue
-        divide_tree_bu(g, t, child, node)
+        divide_tree_bu(t, child, node)
     for child in t[node]:  # Merge clusters
         if child == up:
             continue
         if len(clusters_by_node[child]) < cluster_size:
             clusters_by_node[node] += clusters_by_node[child]
         if len(clusters_by_node[node]) >= cluster_size:
-            # Create new node
-            new_node = t.number_of_nodes()
-            g.add_node(new_node, weight=0, in_solution=True, father=node)
-            # Connect new node to original
-            g.add_edge(node, new_node)
-            # for each child that is in cluster, change edge
-            for c in [n for n in clusters_by_node[node] if n in t[node]]:
-                g.add_edge(new_node, c, weight=t[node][c]['weight'], in_solution=True, father=None)
-                g.remove_edge(node, c)
-            # add cluster to clusters
-            new_cluster = [n for n in clusters_by_node[node] if n != node]
-            new_cluster.append(new_node)
-            clusters.append(new_cluster)
-            for n in new_cluster:
-                if n < n_vertex:
-                    in_cluster[n] = True
+            # Deep copy of cluster and create new cluster
+            clusters.append([n for n in clusters_by_node[node]])
+            for n in clusters_by_node[node]:
+                in_cluster[n] = True
             clusters_by_node[node] = [node]
     # Push the final cluster to clusters
     if up is None and clusters_by_node[node] != [node]:
@@ -157,14 +146,54 @@ def divide_tree_bu(g, t, node, up=None):
             in_cluster[n] = True
 
 
-def select_two_clusters(t, c1, c2):
+def create_dummies(g: nx.Graph, ns: [int], cs: [[int]], print_logs=False):
+    # Create dummies for each node in nodes_list
+    is_in_cluster = {n: False for n in ns}
+    nodes_list = list(ns.keys())
+    for n in nodes_list:
+        # Try to find n in each cluster
+        for c in cs:
+            if n in c:
+                if not is_in_cluster[n]:
+                    is_in_cluster[n] = True
+                else:
+                    # Create dummy
+                    global curr_biggest
+                    dummy_node = max(g.number_of_nodes(), curr_biggest+1)
+                    curr_biggest = dummy_node
+                    g.add_node(dummy_node, father=n)
+                    # For each neighbor of n that's in cluster, change edge
+                    neighbors = list(g[n].keys())
+                    for neighbor in neighbors:
+                        if neighbor in c:
+                            if print_logs:
+                                print("++++")
+                                print(f"creating edge {neighbor} {dummy_node}")
+                                print(f"deleting edge {neighbor} {n}")
+                            g.add_edge(neighbor, dummy_node, weight=g[n][neighbor]['weight'], in_solution=g[n][neighbor]['in_solution'])
+                            g.remove_edge(n, neighbor)
+                    # Add a 0-cost edge between the node and its dummy, and changes n to dummy_node in cluster
+                    g.add_edge(n, dummy_node, weight=0, in_solution=True)
+                    for i in range(len(c)):
+                        if c[i] == n:
+                            c[i] = dummy_node
+                            break
+
+
+def select_two_clusters(g, t, c1, c2):
+    must_merge = None
     for u in c1:
         for v in c2:
             # CAUTION: merging by edge while sharing nodes can break the algorithm
-            if u == v:  # or t.has_edge(u, v):
-                print(f"merge using nodes {u} and {v}")
-                return c1 + list(set(c2) - set(c1))
-    return None
+            if t.has_edge(u, v):
+                # if u is dummy of v, remove u
+                if nx.get_node_attributes(t, 'father')[u] == v:
+                    must_merge = (v, u) # u will be contracted in v
+                # if v is dummy of u, remove v
+                elif nx.get_node_attributes(t, 'father')[v] == u:
+                    must_merge = (u, v)  # v will be contracted in u
+                return c1 + list(set(c2) - set(c1)), must_merge
+    return None, None
 
 
 '''
@@ -174,10 +203,19 @@ def select_two_clusters(t, c1, c2):
 
 
 def add_requirements(t, st, base_node, curr_node, prev_node, subproblem_req, requirements):
-    for node in st.nodes():
-        if node > base_node:
-            subproblem_req[base_node][node] += \
-                max(requirements[curr_node][node], requirements[node][curr_node])
+    list_of_fathers = nx.get_node_attributes(t, 'father')
+    if list_of_fathers[base_node]:
+        for node in st.nodes():
+            subproblem_req[base_node][node] += 0.0
+    else:
+        for node in st.nodes():
+            if list_of_fathers[node] is not None:
+                subproblem_req[base_node][node] += 0.0
+            elif list_of_fathers[curr_node] is not None:
+                subproblem_req[base_node][node] += 0.0
+            elif node > base_node:
+                subproblem_req[base_node][node] += \
+                    max(requirements[curr_node][node], requirements[node][curr_node])
     # Add recursively
     for neighbor in t[curr_node]:
         if neighbor == prev_node:
@@ -189,12 +227,17 @@ def generate_subproblem_req(t, st, requirements):
     subproblem_requirements = {}
     for u in st.nodes():
         subproblem_requirements[u] = {}
-        # Initialize with original requirements
-        for v in st.nodes():
-            if v > u:
-                subproblem_requirements[u][v] = requirements[u][v]
-            else:
+        # If u is a dummy node, all requirements with other nodes must be zero, the original req will be added later
+        if nx.get_node_attributes(t, 'father')[u] is not None:
+            for v in st.nodes():
                 subproblem_requirements[u][v] = 0.0
+        # Initialize with original requirements
+        else:
+            for v in st.nodes():
+                if v > u and nx.get_node_attributes(t, 'father')[v] is None:
+                    subproblem_requirements[u][v] = requirements[u][v]
+                else:
+                    subproblem_requirements[u][v] = 0.0
         # Sum requirements from nodes outside the subproblem
         for neighbor in t[u]:
             if neighbor not in st.nodes():
@@ -260,71 +303,124 @@ def main(print_logs=False, plot_tree=False):
     # divide in sub-clusters
     for node in graph.nodes():
         dummy_nodes[node] = set()
-    divide_tree_bu(graph, tree, root)
-    for cluster in clusters:
-        print(cluster)
+    divide_tree_bu(tree, root)
+    create_dummies(graph, graph.nodes(), clusters)
+    # Creating struct to record values
+    last_solution: {(int, int), float} = {}
 
+    improved = True
     # Iteration
-    for i in range(len(clusters)):
-        for j in range(len(clusters)):
-            if i == j:
-                continue
-            first = clusters[i]
-            second = clusters[j]
-            print("-------------")
-            print(f"{i}: {first}")
-            print(f"{j}: {second}")
-            merged_cluster = select_two_clusters(tree, first, second)
-            if merged_cluster is None:
-                continue
-            # Subtree, used to calculate things such as subproblem requirements
-            subtree = tree.subgraph(merged_cluster)
-            # Subgraph, used to generate local solution
-            subgraph = graph.subgraph(merged_cluster)
-            if not nx.is_tree(subtree):
-                print("subtree created by clusters not valid")
+    while improved:
+        improved = False
+        for i in range(len(clusters)):
+            for j in range(i, len(clusters)):
+                if i == j:
+                    continue
+                first = clusters[i]
+                second = clusters[j]
+                merged_cluster, nodes_to_merge = select_two_clusters(graph, tree, first, second)
+                if merged_cluster is None:
+                    continue
+                # Debug
                 if print_logs:
-                    for e in subtree.edges():
-                        print(e[0], e[1])
+                    print("-------------")
+                    print(f"{i}: {first}")
+                    print(f"{j}: {second}")
+                # remove possible dummy if connected by one
+                if nodes_to_merge is not None:
+                    nx.contracted_nodes(graph, nodes_to_merge[0], nodes_to_merge[1], self_loops=False, copy=False)
+                    merged_cluster.remove(nodes_to_merge[1])
+                # Subtree, used to calculate things such as subproblem requirements
+                subtree = tree.subgraph(merged_cluster)
+                # Subgraph, used to generate local solution
+                subgraph = graph.subgraph(merged_cluster)
+                if not nx.is_tree(subtree):
+                    print("subtree created by clusters not valid")
+                    if print_logs:
+                        for e in subtree.edges():
+                            print(e[0], e[1])
+                    if plot_tree:
+                        nx.draw(subtree, with_labels=True, node_color="tab:red")
+                        plt.show()
+                    return
+                # Generate values for subproblem
+                sp_req = generate_subproblem_req(tree, subtree, req)
+                o_dict = get_o_u(subgraph, sp_req)
+                x_dict, y_dict, f_dict = defining_vars(subgraph)
+                # Generate MIP
+                problem = generate_problem(subgraph, sp_req, o_dict, x_dict, y_dict, f_dict, write_subproblem=True)
+                # Calling solver
+                solve_problem(problem)
+                solution_cost = value(problem.objective)
+                print(LpStatus[problem.status] + ',' + str(solution_cost))
+                if (i, j) in last_solution:
+                    if abs(last_solution[(i, j)] - solution_cost) > 1E-5:
+                        iterative_cost += solution_cost - last_solution[(i, j)]
+                        last_solution[(i, j)] = solution_cost
+                        improved = True
+                    else:
+                        print("Optimized but same result was found")
+                else:
+                    last_solution[(i, j)] = solution_cost
+                    improved = True
+                # updating graph
+                for e in subgraph.edges():
+                    if x_dict[e].varValue == 1.0:
+                        graph.edges[e]['in_solution'] = True
+                    else:
+                        graph.edges[e]['in_solution'] = False
+                tree = nx.subgraph_view(graph, filter_edge=filter_solution)
                 if plot_tree:
+                    nx.draw(subtree, with_labels=True, node_color="tab:green")
+                    plt.show()
+                c1, c2 = redivide_tree(subtree)
+                if abs(len(c1) - len(c2)) > 3:
+                    print("Difference between clusters is too big")
                     nx.draw(subtree, with_labels=True, node_color="tab:red")
                     plt.show()
-                return
-            # Generate values for subproblem
-            sp_req = generate_subproblem_req(tree, subtree, req)
-            o_dict = get_o_u(subgraph, sp_req)
-            x_dict, y_dict, f_dict = defining_vars(subgraph)
-            # Generate MIP
-            problem = generate_problem(subgraph, sp_req, o_dict, x_dict, y_dict, f_dict)
-            # Calling solver
-            solve_problem(problem)
-            new_cost = value(problem.objective)
-            print(LpStatus[problem.status] + ',' + str(new_cost))
-            # updating graph
-            for e in subgraph.edges():
-                if x_dict[e].varValue == 1.0:
-                    graph.edges[e]['in_solution'] = True
-                else:
-                    graph.edges[e]['in_solution'] = False
+                    return
+                create_dummies(graph, {c: None for c in merged_cluster}, [c1, c2])
 
-            c1, c2 = redivide_tree(subtree)
+                # Debug only, remove all until the END comment
+                merged_cluster = c1 + c2
+                subtree = tree.subgraph(merged_cluster)
+                if not nx.is_tree(subtree):
+                    print("subtree of solution not valid")
+                    print(c1)
+                    print(c2)
+                    if print_logs:
+                        for e in tree.edges():
+                            print(e[0], e[1])
+                    if plot_tree:
+                        nx.draw(subtree, with_labels=True, node_color="tab:red")
+                        plt.show()
+                    return
+                if not nx.is_tree(tree.subgraph(c1)):
+                    print("error in division")
+                if not nx.is_tree(tree.subgraph(c2)):
+                    print("error in division")
+                # END
 
-            if not nx.is_tree(subtree):
-                print("subtree of solution not valid")
-            if not nx.is_tree(tree.subgraph(c1)):
-                print("error in division")
-            if not nx.is_tree(tree.subgraph(c2)):
-                print("error in division")
-            for x in range(len(clusters)):
-                if clusters[x] == first:
-                    clusters[x] = c1
-                if clusters[x] == second:
-                    clusters[x] = c2
+                clusters[i] = c1
+                clusters[j] = c2
+
+    k = list(graph.nodes().keys())
+    k.sort()
+    # print(len(k))
+    # print(k)
+    for i in range(len(k)-1, 0, -1):
+        curr_node = k[i]
+        if tree.nodes[curr_node]['father'] is not None:
+            father = tree.nodes[curr_node]['father']
+            print(f'merging {curr_node} in {father}')
+            nx.contracted_nodes(graph, father, curr_node, self_loops=False, copy=False)
+
     calculate_cost(tree, req)
+    print("Iterative cost:", iterative_cost)
 
 
 if __name__ == '__main__':
     # Reading instance
-    n_vertex, n_edges, graph, req = read_instance('./instances/zoo-MRCT/Colt_4.in')
+    n_vertex, n_edges, graph, req = read_instance('./instances/tests/berry35.in')
     in_cluster = [False for _ in range(n_vertex)]
-    main()
+    main(plot_tree=False, print_logs=False)
