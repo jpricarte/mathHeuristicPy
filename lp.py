@@ -132,8 +132,8 @@ def knapsack_approach(centroid: int, weights: dict[int, int], n_nodes: int) -> (
     v_dict = LpVariable.dicts("v", [v for v in weights.keys()],
                               lowBound=0, upBound=1, cat='Integer')
     problem = LpProblem("knapsack_problem", LpMaximize)
-    problem += lpSum(v_dict[k] for k in weights.keys()), "selected_items"
-    problem += lpSum(v_dict[k] * weights[k] for k in weights.keys()) <= (n_nodes // 2) + 1, "c1"
+    problem += lpSum(v_dict[k] * weights[k] for k in weights.keys()), "selected_items"
+    problem += lpSum(v_dict[k] * weights[k] for k in weights.keys()) <= (n_nodes // 2), "c1"
     problem.writeLP("knapsack.lp")
     solve_problem(problem)
     for k in v_dict:

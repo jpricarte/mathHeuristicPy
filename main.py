@@ -318,12 +318,14 @@ def main(print_logs=False, plot_tree=False):
                     continue
                 first = clusters[i]
                 second = clusters[j]
-                print("-------------")
-                print(f"{i}: {first}")
-                print(f"{j}: {second}")
                 merged_cluster, nodes_to_merge = select_two_clusters(graph, tree, first, second)
                 if merged_cluster is None:
                     continue
+                # Debug
+                if print_logs:
+                    print("-------------")
+                    print(f"{i}: {first}")
+                    print(f"{j}: {second}")
                 # remove possible dummy if connected by one
                 if nodes_to_merge is not None:
                     nx.contracted_nodes(graph, nodes_to_merge[0], nodes_to_merge[1], self_loops=False, copy=False)
@@ -353,6 +355,7 @@ def main(print_logs=False, plot_tree=False):
                 print(LpStatus[problem.status] + ',' + str(solution_cost))
                 if (i, j) in last_solution:
                     if abs(last_solution[(i, j)] - solution_cost) > 1E-5:
+                        iterative_cost += solution_cost - last_solution[(i, j)]
                         last_solution[(i, j)] = solution_cost
                         improved = True
                     else:
@@ -371,10 +374,6 @@ def main(print_logs=False, plot_tree=False):
                     nx.draw(subtree, with_labels=True, node_color="tab:green")
                     plt.show()
                 c1, c2 = redivide_tree(subtree)
-                # print("++++")
-                # print(c1)
-                # print(c2)
-                # print("++++")
                 if abs(len(c1) - len(c2)) > 3:
                     print("Difference between clusters is too big")
                     nx.draw(subtree, with_labels=True, node_color="tab:red")
@@ -405,11 +404,6 @@ def main(print_logs=False, plot_tree=False):
                 clusters[i] = c1
                 clusters[j] = c2
 
-                # print("++++")
-                # print(c1)
-                # print(c2)
-                # print("++++")
-
     k = list(graph.nodes().keys())
     k.sort()
     # print(len(k))
@@ -420,14 +414,13 @@ def main(print_logs=False, plot_tree=False):
             father = tree.nodes[curr_node]['father']
             print(f'merging {curr_node} in {father}')
             nx.contracted_nodes(graph, father, curr_node, self_loops=False, copy=False)
-    # k = list(graph.nodes().keys())
-    # k.sort()
-    # print(k)
+
     calculate_cost(tree, req)
+    print("Iterative cost:", iterative_cost)
 
 
 if __name__ == '__main__':
     # Reading instance
-    n_vertex, n_edges, graph, req = read_instance('./instances/tests/STEIC2.in')
+    n_vertex, n_edges, graph, req = read_instance('./instances/tests/berry35.in')
     in_cluster = [False for _ in range(n_vertex)]
     main(plot_tree=False, print_logs=False)
