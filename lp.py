@@ -127,7 +127,7 @@ def solve_problem(problem, time_limit=3600, print_msg=False):
 '''
 
 
-def knapsack_approach(centroid: int, weights: dict[int, int], n_nodes: int) -> (list[int], list[int]):  # TODO: MUDAR PARA PD
+def knapsack_approach(centroid: int, weights: dict[int, int], n_nodes: int):  # TODO: MUDAR PARA PD
     c1, c2 = [centroid], [centroid]
     v_dict = LpVariable.dicts("v", [v for v in weights.keys()],
                               lowBound=0, upBound=1, cat='Integer')
