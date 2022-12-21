@@ -1,4 +1,3 @@
-import sys
 import networkx as nx
 import matplotlib.pyplot as plt
 from lp import *
@@ -10,6 +9,7 @@ in_cluster = []
 clusters_by_node = {}
 dummy_nodes = {}
 curr_biggest = 0
+
 
 def read_instance(file_name: str) -> (int, int, nx.Graph, [[float]]):
     g = nx.Graph()
@@ -88,6 +88,8 @@ def choose_root(g, n, r):
     calculate_cost(t, r): Calculate cost using the cost definition
     sum_{i in N} sum_{j in N}
 '''
+
+
 def calculate_cost(t, r, print_cost=False):
     cost = 0.0
     for i in t.nodes():
@@ -191,7 +193,7 @@ def create_dummies(g: nx.Graph, ns: [int], cs: [[int]], print_logs=False):
                             break
 
 
-def select_two_clusters(g, t, c1, c2):
+def select_two_clusters(t, c1, c2):
     must_merge = None
     for u in c1:
         for v in c2:
@@ -199,7 +201,7 @@ def select_two_clusters(g, t, c1, c2):
             if t.has_edge(u, v):
                 # if u is dummy of v, remove u
                 if nx.get_node_attributes(t, 'father')[u] == v:
-                    must_merge = (v, u) # u will be contracted in v
+                    must_merge = (v, u)  # u will be contracted in v
                 # if v is dummy of u, remove v
                 elif nx.get_node_attributes(t, 'father')[v] == u:
                     must_merge = (u, v)  # v will be contracted in u
@@ -304,7 +306,6 @@ def redivide_tree(st):
 def main(print_logs=False, plot_tree=False):
     global graph
     # To small and some medium size instances, we can change the lines bellow to solution_by_dijkstra()
-    # Warning: instead of paths, solution_by_dijkstra() returns the tree
     paths, root, _ = choose_root(graph, n_vertex, req)
     update_solution_from_path_list(graph, paths)
     tree = nx.subgraph_view(graph, filter_edge=filter_solution)
@@ -327,7 +328,7 @@ def main(print_logs=False, plot_tree=False):
         o_dict = get_o_u(graph, req)
         x_dict, y_dict, f_dict = defining_vars(graph)
         # Generate MIP
-        problem = generate_problem(graph, req, o_dict, x_dict, y_dict, f_dict, write_subproblem=True)
+        problem = generate_problem(graph, req, o_dict, x_dict, y_dict, f_dict, write_subproblem=False)
         # Calling solver
         solve_problem(problem)
         print("optimal solution: ", value(problem.objective))
@@ -343,7 +344,7 @@ def main(print_logs=False, plot_tree=False):
                     continue
                 first = clusters[i]
                 second = clusters[j]
-                merged_cluster, nodes_to_merge = select_two_clusters(graph, tree, first, second)
+                merged_cluster, nodes_to_merge = select_two_clusters(tree, first, second)
                 if merged_cluster is None:
                     continue
                 # Debug
@@ -361,15 +362,6 @@ def main(print_logs=False, plot_tree=False):
                 subtree = tree.subgraph(merged_cluster)
                 # Subgraph, used to generate local solution
                 subgraph = graph.subgraph(merged_cluster)
-                if not nx.is_tree(subtree):
-                    print("subtree created by clusters not valid")
-                    if print_logs:
-                        for e in subtree.edges():
-                            print(e[0], e[1])
-                    if plot_tree:
-                        nx.draw(subtree, with_labels=True, node_color="tab:red")
-                        plt.show()
-                    return
                 # Generate requirements for subproblem
                 sp_req = generate_subproblem_req(tree, subtree, req)
                 # Calculate original cost if it was never calculated before
@@ -379,11 +371,12 @@ def main(print_logs=False, plot_tree=False):
                 o_dict = get_o_u(subgraph, sp_req)
                 x_dict, y_dict, f_dict = defining_vars(subgraph)
                 # Generate MIP
-                problem = generate_problem(subgraph, sp_req, o_dict, x_dict, y_dict, f_dict, write_subproblem=True)
+                problem = generate_problem(subgraph, sp_req, o_dict, x_dict, y_dict, f_dict, write_subproblem=False)
                 # Calling solver
                 solve_problem(problem)
                 solution_cost = value(problem.objective)
-                print(f'[{i}, {j}]:', LpStatus[problem.status] + ',' + str(solution_cost))
+                if print_logs:
+                    print(f'[{i}, {j}]:', LpStatus[problem.status] + ',' + str(solution_cost))
 
                 # If the result is better than the original cost, update it
                 if abs(last_solution[(i, j)] - solution_cost) >= 2 * sys.float_info.epsilon:
@@ -392,7 +385,8 @@ def main(print_logs=False, plot_tree=False):
                     last_solution[(i, j)] = solution_cost
                     improved = True
                 else:
-                    print("Optimized but same result was found")
+                    if print_logs:
+                        print("Optimized but same result was found")
                     graph = bk_graph
                     tree = nx.subgraph_view(graph, filter_edge=filter_solution)
                     continue
@@ -409,26 +403,6 @@ def main(print_logs=False, plot_tree=False):
                 c1, c2 = redivide_tree(subtree)
                 create_dummies(graph, {c: None for c in merged_cluster}, [c1, c2])
 
-                # Debug only, remove all until the END comment
-                merged_cluster = c1 + c2
-                subtree = tree.subgraph(merged_cluster)
-                if not nx.is_tree(subtree):
-                    print("subtree of solution not valid")
-                    print(c1)
-                    print(c2)
-                    if print_logs:
-                        for e in tree.edges():
-                            print(e[0], e[1])
-                    if plot_tree:
-                        nx.draw(subtree, with_labels=True, node_color="tab:red")
-                        plt.show()
-                    return
-                if not nx.is_tree(tree.subgraph(c1)):
-                    print("error in division")
-                if not nx.is_tree(tree.subgraph(c2)):
-                    print("error in division")
-                # END
-
                 clusters[i] = c1
                 clusters[j] = c2
 
@@ -438,7 +412,8 @@ def main(print_logs=False, plot_tree=False):
         curr_node = k[i]
         if tree.nodes[curr_node]['father'] is not None:
             father = tree.nodes[curr_node]['father']
-            print(f'merging {curr_node} in {father}')
+            if print_logs:
+                print(f'merging {curr_node} in {father}')
             nx.contracted_nodes(graph, father, curr_node, self_loops=False, copy=False)
 
     calculate_cost(tree, req, True)

@@ -1,9 +1,8 @@
-from gurobipy import *
 from pulp import *
 
 '''
     get_o_u(req)
-    Generate O value for each vertice u
+    Generate O value for each vertex u
     return: o, an [float]
 '''
 
@@ -70,10 +69,10 @@ def second_constraint(subgraph, req, problem, f):  # equivalent: 2.12
 def third_fourth_constraint(subgraph, req, o, problem, f, y):
     for u in subgraph.nodes():
         min_r = min(req[u][i] for i in subgraph.nodes())
-        M = o[u] - min_r
+        big_m = o[u] - min_r
         for i, j in subgraph.edges():
-            problem += f[u, i, j] <= (M * y[u, i, j]), "3rd_" + str(u) + "-" + str(i) + "-" + str(j)
-            problem += f[u, j, i] <= (M * y[u, j, i]), "4th_" + str(u) + "-" + str(j) + "-" + str(i)
+            problem += f[u, i, j] <= (big_m * y[u, i, j]), "3rd_" + str(u) + "-" + str(i) + "-" + str(j)
+            problem += f[u, j, i] <= (big_m * y[u, j, i]), "4th_" + str(u) + "-" + str(j) + "-" + str(i)
 
 
 def fifth_constraint(subgraph, problem, y):
