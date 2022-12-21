@@ -321,6 +321,18 @@ def main(print_logs=False, plot_tree=False):
     last_solution: {(int, int), float} = {}
     print(f'number of clusters: {len(clusters)}')
 
+    if len(clusters) == 1:
+        # Generate requirements for subproblem
+        # Create vars for MIP
+        o_dict = get_o_u(graph, req)
+        x_dict, y_dict, f_dict = defining_vars(graph)
+        # Generate MIP
+        problem = generate_problem(graph, req, o_dict, x_dict, y_dict, f_dict, write_subproblem=True)
+        # Calling solver
+        solve_problem(problem)
+        print("optimal solution: ", value(problem.objective))
+        return
+
     improved = True
     # Iteration
     while improved:
