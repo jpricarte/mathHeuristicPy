@@ -266,7 +266,7 @@ def count_nodes_bellow(st, node, up, counter):
     return counter[node]
 
 
-def insert_nodes_bellow(st, node: int, up: int) -> list[int]:
+def insert_nodes_bellow(st, node: int, up: int):
     nodes = []
     for n in st.neighbors(node):
         if n == up:
