@@ -1,8 +1,9 @@
+import sys
 import networkx as nx
 import matplotlib.pyplot as plt
 from lp import *
 
-cluster_size = 10
+cluster_size = 0  # Should be overwritten by argv[2]
 clusters = []
 current_cluster = []
 in_cluster = []
@@ -96,6 +97,8 @@ def calculate_cost(t, r, print_cost=False):
                 continue
             requirement = max(r[i][j], r[j][i])
             cost += get_path_cost(t, path_list[j]) * requirement
+    # Divide the cost by 2
+    cost /= 2
     if print_cost:
         print("communication cost:", cost)
     return cost
@@ -175,7 +178,10 @@ def create_dummies(g: nx.Graph, ns: [int], cs: [[int]], print_logs=False):
                                 print("++++")
                                 print(f"creating edge {neighbor} {dummy_node}")
                                 print(f"deleting edge {neighbor} {n}")
-                            g.add_edge(neighbor, dummy_node, weight=g[n][neighbor]['weight'], in_solution=g[n][neighbor]['in_solution'])
+                            g.add_edge(neighbor,
+                                       dummy_node,
+                                       weight=g[n][neighbor]['weight'],
+                                       in_solution=g[n][neighbor]['in_solution'])
                             g.remove_edge(n, neighbor)
                     # Add a 0-cost edge between the node and its dummy, and changes n to dummy_node in cluster
                     g.add_edge(n, dummy_node, weight=0, in_solution=True)
@@ -313,6 +319,7 @@ def main(print_logs=False, plot_tree=False):
     create_dummies(graph, graph.nodes(), clusters)
     # Creating struct to record values
     last_solution: {(int, int), float} = {}
+    print(f'number of clusters: {len(clusters)}')
 
     improved = True
     # Iteration
@@ -351,8 +358,12 @@ def main(print_logs=False, plot_tree=False):
                         nx.draw(subtree, with_labels=True, node_color="tab:red")
                         plt.show()
                     return
-                # Generate values for subproblem
+                # Generate requirements for subproblem
                 sp_req = generate_subproblem_req(tree, subtree, req)
+                # Calculate original cost if it was never calculated before
+                if (i, j) not in last_solution:
+                    last_solution[(i, j)] = calculate_cost(subtree, sp_req)
+                # Create vars for MIP
                 o_dict = get_o_u(subgraph, sp_req)
                 x_dict, y_dict, f_dict = defining_vars(subgraph)
                 # Generate MIP
@@ -360,10 +371,12 @@ def main(print_logs=False, plot_tree=False):
                 # Calling solver
                 solve_problem(problem)
                 solution_cost = value(problem.objective)
-                print(LpStatus[problem.status] + ',' + str(solution_cost))
-                if (i, j) not in last_solution:
-                    last_solution[(i, j)] = calculate_cost(subtree, sp_req)
-                if abs(last_solution[(i, j)] - solution_cost) > 1E-5:
+                print(f'[{i}, {j}]:', LpStatus[problem.status] + ',' + str(solution_cost))
+
+                # If the result is better than the original cost, update it
+                if abs(last_solution[(i, j)] - solution_cost) >= 2 * sys.float_info.epsilon:
+                    # Update iterative cost
+                    iterative_cost = iterative_cost - last_solution[(i, j)] + solution_cost
                     last_solution[(i, j)] = solution_cost
                     improved = True
                 else:
@@ -377,7 +390,7 @@ def main(print_logs=False, plot_tree=False):
                         graph.edges[e]['in_solution'] = True
                     else:
                         graph.edges[e]['in_solution'] = False
-                tree = nx.subgraph_view(graph, filter_edge=filter_solution)
+                # tree = nx.subgraph_view(graph, filter_edge=filter_solution)
                 if plot_tree:
                     nx.draw(subtree, with_labels=True, node_color="tab:green")
                     plt.show()
@@ -417,11 +430,11 @@ def main(print_logs=False, plot_tree=False):
             nx.contracted_nodes(graph, father, curr_node, self_loops=False, copy=False)
 
     calculate_cost(tree, req, True)
-    print("Iterative cost:", iterative_cost)
 
 
 if __name__ == '__main__':
     # Reading instance
-    n_vertex, n_edges, graph, req = read_instance('./instances/tests/berry35.in')
+    n_vertex, n_edges, graph, req = read_instance(sys.argv[1])
+    cluster_size = int(sys.argv[2])
     in_cluster = [False for _ in range(n_vertex)]
     main(plot_tree=False, print_logs=False)
