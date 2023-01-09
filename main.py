@@ -7,7 +7,6 @@ clusters = []
 current_cluster = []
 in_cluster = []
 clusters_by_node = {}
-dummy_nodes = {}
 curr_biggest = 0
 
 
@@ -15,7 +14,7 @@ def read_instance(file_name: str) -> (int, int, nx.Graph, [[float]]):
     g = nx.Graph()
     with open(file_name, 'r') as instance_file:
         (n, m) = map(lambda x: int(x), instance_file.readline().split())
-        r = [[0.0 for _ in range(n)] for _ in range(n)]
+        r = {u: {} for u in range(n)}
         for _ in range(m):
             (u, v, l) = map(lambda x: float(x), instance_file.readline().split())
             u, v = int(u), int(v)
@@ -86,19 +85,18 @@ def choose_root(g, n, r):
 
 '''
     calculate_cost(t, r): Calculate cost using the cost definition
-    sum_{i in N} sum_{j in N}
 '''
 
 
 def calculate_cost(t, r, print_cost=False):
     cost = 0.0
-    for i in t.nodes():
-        path_list = nx.shortest_path(t, source=i)
-        for j in t.nodes():
-            if j == i:
+    for u in t.nodes():
+        path_list = nx.shortest_path(t, source=u)
+        for v in t.nodes():
+            if v == u:
                 continue
-            requirement = max(r[i][j], r[j][i])
-            cost += get_path_cost(t, path_list[j]) * requirement
+            requirement = max(r[u][v], r[v][u])
+            cost += get_path_cost(t, path_list[v]) * requirement
     # Divide the cost by 2
     cost /= 2
     if print_cost:
@@ -130,14 +128,14 @@ def add_to_cluster(u):
         current_cluster.clear()
 
 
-def divide_tree_bu(t, node, up=None):
+def divide_tree(t, node, up=None):
     clusters_by_node[node] = [node]
     if len(t[node]) == 1:  # Only one neighbor, is a leaf
         return
     for child in t[node]:  # Generate children's clusters
         if child == up:
             continue
-        divide_tree_bu(t, child, node)
+        divide_tree(t, child, node)
     for child in t[node]:  # Merge clusters
         if child == up:
             continue
@@ -314,9 +312,7 @@ def main(print_logs=False, plot_tree=False):
         for e in tree.edges():
             print(e[0], e[1])
     # divide in sub-clusters
-    for node in graph.nodes():
-        dummy_nodes[node] = set()
-    divide_tree_bu(tree, root)
+    divide_tree(tree, root)
     create_dummies(graph, graph.nodes(), clusters)
     # Creating struct to record values
     last_solution: {(int, int), float} = {}

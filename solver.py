@@ -119,7 +119,7 @@ def sixth_constraint(n, m, graph, req, problem, x, y): # não tem equivalente
     for u in range(n):
         for i in range(n):
             for j in range(i, n):
-                if (graph[i][j] < 0): 
+                if graph[i][j] < 0:
                     continue
                 problem += (y[u,i,j] + y[u,j,i]) <= x[i,j]
 
@@ -130,29 +130,29 @@ def seventh_constraint(n, m, graph, req, problem, x): # equivalente: 2.10
 
 
 def main():
-    onlyfiles = [f for f in listdir('./instances') if isfile(join('./instances/', f))]
+    if len(sys.argv) != 3:
+        print('usage: python [path_to]/solver.py <instance> <time_limit_s>')
+    filename = sys.argv[1]
+    (n, m, graph, req) = read_instance(filename)
+    o = get_o_u(req, n)
+    (x, y, f) = defining_vars(graph, n)
 
-    for filename in onlyfiles:
-        (n, m, graph, req) = read_instance('./instances/' + filename)
-        o = get_o_u(req, n)
-        (x, y, f) = defining_vars(graph, n)
+    problem = defining_objective(graph, n, f)
+    first_constraint(n, m, graph, req, o, problem, f)
+    second_constraint(n, m, graph, req, problem, f)
+    third_fourth_constraint(n, m, graph, req, o, problem, f, y)
+    fifth_constraint(n, m, graph, req, problem, y)
+    sixth_constraint(n, m, graph, req, problem, x, y)
+    seventh_constraint(n, m, graph, req, problem, x)
 
-        problem = defining_objective(graph, n, f)
-        first_constraint(n, m, graph, req, o, problem, f)
-        second_constraint(n, m, graph, req, problem, f)
-        third_fourth_constraint(n, m, graph, req, o, problem, f, y)
-        fifth_constraint(n, m, graph, req, problem, y)
-        sixth_constraint(n, m, graph, req, problem, x, y)
-        seventh_constraint(n, m, graph, req, problem, x)
+    solver = GUROBI(timeLimit=int(sys.argv[2]))
+    solver.buildSolverModel(problem)
+    solver.callSolver(problem)
+    solver.findSolutionValues(problem)
 
-        solver = GUROBI(timeLimit = 3600)
-        solver.buildSolverModel(problem)
-        solver.callSolver(problem)
-        solver.findSolutionValues(problem)
-
-        with open('log.csv','a') as logfile:
-            line = filename + ',' + LpStatus[problem.status] + ',' + str(value(problem.objective)) + '\n'
-            logfile.write(line)
+    with open('log.csv','a') as logfile:
+        line = filename + ',' + LpStatus[problem.status] + ',' + str(value(problem.objective)) + '\n'
+        logfile.write(line)
 
 
 if __name__ == '__main__':
