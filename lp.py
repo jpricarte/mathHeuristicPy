@@ -123,10 +123,42 @@ def solve_problem(problem, time_limit=3600, print_msg=False):
 
 '''
     Knapsack approach for cluster splitting
+    in this approach, weight and value are always the same
+    centroid = node that will be split
+    weights = values = number of nodes associated with each node (dict)
+    n_nodes = number of nodes in problem
 '''
 
 
-def knapsack_approach(centroid: int, weights, n_nodes: int):  # TODO: MUDAR PARA PD
+def knapsack_approach(centroid: int, weights, n_nodes: int):
+    c1, c2 = [centroid], [centroid]
+    ks = list(weights.keys())
+    # Dynamic programming for the knapsack problem
+    mat = [[0 for _ in range(n_nodes // 2 + 1)] for _ in range(len(weights) + 1)]
+    for i in range(1, len(weights) + 1):
+        elem_weight = weights[ks[i-1]]
+        for w in range(1, n_nodes // 2 + 1):
+            if elem_weight <= w:
+                mat[i][w] = max(elem_weight + mat[i-1][w-elem_weight], mat[i-1][w])
+            else:
+                mat[i][w] = mat[i-1][w]
+    # Dividing cluster using the result generated above
+    j = n_nodes // 2  # last column
+    for i in range(len(ks), 0, -1):
+        elem = ks[i-1]
+        elem_weight = weights[elem]
+        if elem_weight < (n_nodes // 2 + 1) and mat[i][j] != mat[i-1][j]:
+            c1.append(elem)
+            j = mat[i][j] - elem_weight
+        else:
+            c2.append(elem)
+
+
+
+    return c1, c2
+
+
+def knapsack_approach_lp(centroid: int, weights, n_nodes: int):  # TODO: MUDAR PARA PD
     c1, c2 = [centroid], [centroid]
     v_dict = LpVariable.dicts("v", [v for v in weights.keys()],
                               lowBound=0, upBound=1, cat='Integer')
