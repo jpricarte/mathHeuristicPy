@@ -11,6 +11,7 @@ clusters_by_node = {}
 dummy_nodes = {}
 curr_biggest = 0
 
+
 def read_instance(file_name: str) -> (int, int, nx.Graph, [[float]]):
     g = nx.Graph()
     with open(file_name, 'r') as instance_file:
@@ -47,7 +48,7 @@ def solution_by_dijkstra(g, n, r):
     for k in range(n):
         cost = 0.0
         path_list = nx.shortest_path(g, source=k)
-        update_solution_from_path_list(graph, path_list)
+        create_solution_from_path_list(graph, path_list)
         t = nx.subgraph_view(graph, filter_edge=filter_solution)
         for i in range(n):
             path_list = nx.shortest_path(t, source=i)
@@ -84,10 +85,77 @@ def choose_root(g, n, r):
     return best_tree, best_root, best_cost
 
 
-'''
-    calculate_cost(t, r): Calculate cost using the cost definition
-    sum_{i in N} sum_{j in N}
-'''
+def generate_solution(g, reqs):
+    # Choose core using some heuristic
+    c: [int] = get_core(g, reqs, cluster_size)
+    # Use multi-start dijkstra to create multiple trees
+    paths = nx.multi_source_dijkstra_path(g, c)
+    create_solution_from_path_list(graph, paths)
+    forest = nx.subgraph_view(graph, filter_edge=filter_solution)
+    # Connect the core nodes using some approach
+    connect_forest(g, reqs, c, forest)
+    if not nx.is_connected(forest):
+        print('it should be connectd, error')
+        exit(1)
+    # Return the tree created after the connection
+    for u in g.nodes():
+        try:
+            cycle = nx.find_cycle(forest, u)
+            remove_edge_by_cost(graph, cycle, reqs)
+        except:
+            pass
+    return forest
+
+
+def get_core(g, reqs, core_size):
+    o = {}  # o[u] is the sum of requirements
+    for u in g.nodes():
+        o[u] = sum(req[u][v] for v in g.nodes())
+    o = dict(sorted(o.items(), key=lambda item: -item[1]))
+    return list(o.keys())[:core_size]
+
+
+def connect_forest(g, reqs, c, f):
+    u = c[0]
+    c.remove(u)
+    while not len(c) == 0:
+        v = c[0]
+        best_dist = float('inf')
+        best_path = []
+        for node in c:
+            dist, path = nx.single_source_dijkstra(g, u, target=node)
+            if dist < best_dist:
+                v = node
+                best_dist = dist
+                best_path = path
+        # insert path in solution
+        update_solution_from_path_list(g, best_path)
+        # check possible cycles
+        try:
+            cycle = nx.find_cycle(f, u)
+            remove_edge_by_cost(g, cycle, reqs)
+        except:
+            pass
+        # remove from core all nodes connected with u
+        to_remove = []
+        for node in c:
+            if nx.has_path(f, u, node):
+                to_remove.append(node)
+        for node in to_remove:
+            c.remove(node)
+
+
+def remove_edge_by_cost(g, cycle, reqs):
+    big_e = cycle[0]
+    big_cost = g[big_e[0]][big_e[1]]['weight'] * reqs[big_e[0]][big_e[1]]
+    for e in cycle[1:]:
+        cost = g[e[0]][e[1]]['weight'] * reqs[e[0]][e[1]]
+        if cost > big_cost:
+            big_e = e
+            big_cost = cost
+    g[big_e[0]][big_e[1]]['in_solution'] = False
+
+
 def calculate_cost(t, r, print_cost=False):
     cost = 0.0
     for i in t.nodes():
@@ -108,16 +176,20 @@ def filter_solution(n1, n2):
     return graph[n1][n2].get('in_solution', True)
 
 
-def update_solution_from_path_list(g, path_list):
+def create_solution_from_path_list(g, path_list):
     for u, v in g.edges():
         g[u][v]['in_solution'] = False
 
     for path in path_list.values():
-        for i in range(1, len(path)):
-            if len(path) < 2:
-                continue
-            # Set edge as True
-            g[path[i]][path[i - 1]]['in_solution'] = True
+        update_solution_from_path_list(g, path)
+
+
+def update_solution_from_path_list(g, path):
+    for i in range(1, len(path)):
+        if len(path) < 2:
+            continue
+        # Set edge as True
+        g[path[i]][path[i - 1]]['in_solution'] = True
 
 
 def add_to_cluster(u):
@@ -167,7 +239,7 @@ def create_dummies(g: nx.Graph, ns: [int], cs: [[int]], print_logs=False):
                 else:
                     # Create dummy
                     global curr_biggest
-                    dummy_node = max(g.number_of_nodes(), curr_biggest+1)
+                    dummy_node = max(g.number_of_nodes(), curr_biggest + 1)
                     curr_biggest = dummy_node
                     g.add_node(dummy_node, father=n)
                     # For each neighbor of n that's in cluster, change edge
@@ -199,7 +271,7 @@ def select_two_clusters(g, t, c1, c2):
             if t.has_edge(u, v):
                 # if u is dummy of v, remove u
                 if nx.get_node_attributes(t, 'father')[u] == v:
-                    must_merge = (v, u) # u will be contracted in v
+                    must_merge = (v, u)  # u will be contracted in v
                 # if v is dummy of u, remove v
                 elif nx.get_node_attributes(t, 'father')[v] == u:
                     must_merge = (u, v)  # v will be contracted in u
@@ -301,13 +373,17 @@ def redivide_tree(st):
     return c1, c2
 
 
+def print_edges(graph):
+    for edge in graph.edges():
+        print(edge[0], edge[1])
+
+
 def main(print_logs=False, plot_tree=False):
     global graph
     # To small and some medium size instances, we can change the lines bellow to solution_by_dijkstra()
     # Warning: instead of paths, solution_by_dijkstra() returns the tree
-    paths, root, _ = choose_root(graph, n_vertex, req)
-    update_solution_from_path_list(graph, paths)
-    tree = nx.subgraph_view(graph, filter_edge=filter_solution)
+    tree = generate_solution(graph, req)
+    root = list(graph.nodes())[0]
     iterative_cost = calculate_cost(tree, req, True)
     if print_logs:
         for e in tree.edges():
@@ -434,7 +510,7 @@ def main(print_logs=False, plot_tree=False):
 
     k = list(graph.nodes().keys())
     k.sort()
-    for i in range(len(k)-1, 0, -1):
+    for i in range(len(k) - 1, 0, -1):
         curr_node = k[i]
         if tree.nodes[curr_node]['father'] is not None:
             father = tree.nodes[curr_node]['father']
