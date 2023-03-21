@@ -380,6 +380,7 @@ def print_edges(graph):
 
 def main(print_logs=False, plot_tree=False):
     global graph
+    d_pos = None
     # To small and some medium size instances, we can change the lines bellow to solution_by_dijkstra()
     # Warning: instead of paths, solution_by_dijkstra() returns the tree
     tree = generate_solution(graph, req)
@@ -446,7 +447,12 @@ def main(print_logs=False, plot_tree=False):
                         nx.draw(subtree, with_labels=True, node_color="tab:red")
                         plt.show()
                     return
-                # Generate requirements for sub-problem
+                if plot_tree:
+                    d_pos = nx.spring_layout(subgraph)
+                    nx.draw_networkx(subgraph, d_pos)
+                    nx.draw_networkx(subgraph, d_pos, edgelist=list(subtree.edges()), edge_color='red')
+                    plt.show()
+                # Generate requirements for subproblem
                 sp_req = generate_subproblem_req(tree, subtree, req)
                 # Calculate original cost if it was never calculated before
                 if (i, j) not in last_solution:
@@ -481,8 +487,10 @@ def main(print_logs=False, plot_tree=False):
                         graph.edges[e]['in_solution'] = False
                 # tree = nx.subgraph_view(graph, filter_edge=filter_solution)
                 if plot_tree:
-                    nx.draw(subtree, with_labels=True, node_color="tab:green")
+                    nx.draw_networkx(subgraph, d_pos)
+                    nx.draw_networkx(subgraph, d_pos, edgelist=list(subtree.edges()), edge_color='green')
                     plt.show()
+
                 c1, c2 = redivide_tree(subtree)
                 create_dummies(graph, {c: None for c in merged_cluster}, [c1, c2])
 
