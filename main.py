@@ -446,7 +446,7 @@ def main(print_logs=False, plot_tree=False):
                         nx.draw(subtree, with_labels=True, node_color="tab:red")
                         plt.show()
                     return
-                # Generate requirements for subproblem
+                # Generate requirements for sub-problem
                 sp_req = generate_subproblem_req(tree, subtree, req)
                 # Calculate original cost if it was never calculated before
                 if (i, j) not in last_solution:
@@ -461,7 +461,8 @@ def main(print_logs=False, plot_tree=False):
                 solution_cost = value(problem.objective)
                 print(f'[{i}, {j}]:', LpStatus[problem.status] + ',' + str(solution_cost))
 
-                # If the result is better than the original cost, update it
+                # If the result is better than the original cost, update
+                # Pode ter um cancelamento castastrófico rolando aqui
                 if abs(last_solution[(i, j)] - solution_cost) >= 2 * sys.float_info.epsilon:
                     # Update iterative cost
                     iterative_cost = iterative_cost - last_solution[(i, j)] + solution_cost
