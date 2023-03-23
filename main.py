@@ -404,6 +404,7 @@ def main(print_logs=False, plot_tree=False):
         print("optimal solution: ", value(problem.objective))
         return
 
+    # TODO: arrumar uma forma de não ter que passar por tudo antes de encerrar o algoritmo
     improved = True
     while improved:
         improved = False
@@ -507,7 +508,6 @@ def main(print_logs=False, plot_tree=False):
 
                 clusters[i] = c1
                 clusters[j] = c2
-
 
     k = list(graph.nodes().keys())
     k.sort()
