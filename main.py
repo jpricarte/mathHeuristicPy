@@ -310,11 +310,12 @@ def generate_subproblem_req(t, st, requirements):
         # Initialize with original requirements
         else:
             for v in st.nodes():
-                if v > u and nx.get_node_attributes(t, 'father')[v] is None:
+                if u < v and nx.get_node_attributes(t, 'father')[v] is None:
                     subproblem_requirements[u][v] = requirements[u][v]
                 else:
+                    # Same thing as above, requirement will be added later
                     subproblem_requirements[u][v] = 0.0
-        # Sum requirements from nodes outside the subproblem
+        # Sum requirements from nodes outside the sub-problem
         for neighbor in t[u]:
             if neighbor not in st.nodes():
                 add_requirements(t, st, u, neighbor, u, subproblem_requirements, requirements)
@@ -458,7 +459,7 @@ def main(print_logs=False, plot_tree=False):
                 print(f'[{i}, {j}]:', LpStatus[problem.status] + ',' + str(solution_cost))
 
                 # Update cost if had a better result
-                if curr_value - solution_cost > 3e-11:
+                if curr_value - solution_cost > 3e-10:
                     print(f"updated in: {curr_value - solution_cost}")
                     iterative_cost = iterative_cost - curr_value + solution_cost
                     improved = True
