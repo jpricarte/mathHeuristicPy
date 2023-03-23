@@ -147,9 +147,9 @@ def connect_forest(g, reqs, c, f):
 
 def remove_edge_by_cost(g, cycle, reqs):
     big_e = cycle[0]
-    big_cost = g[big_e[0]][big_e[1]]['weight'] * reqs[big_e[0]][big_e[1]]
+    big_cost = reqs[big_e[0]][big_e[1]]
     for e in cycle[1:]:
-        cost = g[e[0]][e[1]]['weight'] * reqs[e[0]][e[1]]
+        cost = reqs[e[0]][e[1]]
         if cost > big_cost:
             big_e = e
             big_cost = cost
@@ -267,7 +267,6 @@ def select_two_clusters(g, t, c1, c2):
     must_merge = None
     for u in c1:
         for v in c2:
-            # CAUTION: merging by edge while sharing nodes can break the algorithm
             if t.has_edge(u, v):
                 # if u is dummy of v, remove u
                 if nx.get_node_attributes(t, 'father')[u] == v:
@@ -277,12 +276,6 @@ def select_two_clusters(g, t, c1, c2):
                     must_merge = (u, v)  # v will be contracted in u
                 return c1 + list(set(c2) - set(c1)), must_merge
     return None, None
-
-
-'''
-    sub-problem_req: map of list of double - A map of aggregated requirements
-    requirements: list of list of double - The original requirements matrix
-'''
 
 
 def add_requirements(t, st, base_node, curr_node, prev_node, subproblem_req, requirements):
@@ -411,33 +404,30 @@ def main(print_logs=False, plot_tree=False):
         return
 
     improved = True
-    # Iteration
     while improved:
         improved = False
         for i in range(len(clusters)):
             for j in range(i, len(clusters)):
                 if i == j:
                     continue
-                first = clusters[i]
-                second = clusters[j]
+                first, second = clusters[i], clusters[j]
+                # try to merge the two clusters into one
                 merged_cluster, nodes_to_merge = select_two_clusters(graph, tree, first, second)
                 if merged_cluster is None:
                     continue
-                # Debug
-                if print_logs:
-                    print("-------------")
-                    print(f"{i}: {first}")
-                    print(f"{j}: {second}")
-                # copy graph to go back if needed
+                # create a backup to return to the original graph is needed
                 bk_graph = graph.copy()
-                # remove possible dummy if connected by one
+                # Remove dummies
                 if nodes_to_merge is not None:
-                    nx.contracted_nodes(graph, nodes_to_merge[0], nodes_to_merge[1], self_loops=False, copy=False)
+                    nx.contracted_nodes(graph, nodes_to_merge[0], nodes_to_merge[1], False, False)
                     merged_cluster.remove(nodes_to_merge[1])
-                # Subtree, used to calculate things such as subproblem requirements
-                subtree = tree.subgraph(merged_cluster)
-                # Subgraph, used to generate local solution
-                subgraph = graph.subgraph(merged_cluster)
+                # Create the subtree and the subgraph to work on
+                subtree, subgraph = tree.subgraph(merged_cluster), graph.subgraph(merged_cluster)
+                # Generate sub-problem requirements
+                sp_req = generate_subproblem_req(tree, subtree, req)
+
+                # BEGIN OF DEBUG AREA
+                # If is not a tree, stop the algorithm, error
                 if not nx.is_tree(subtree):
                     print("subtree created by clusters not valid")
                     if print_logs:
@@ -447,16 +437,16 @@ def main(print_logs=False, plot_tree=False):
                         nx.draw(subtree, with_labels=True, node_color="tab:red")
                         plt.show()
                     return
+                # Plot the subgraph with the tree in red, for analysis
                 if plot_tree:
                     d_pos = nx.spring_layout(subgraph)
                     nx.draw_networkx(subgraph, d_pos)
                     nx.draw_networkx(subgraph, d_pos, edgelist=list(subtree.edges()), edge_color='red')
                     plt.show()
-                # Generate requirements for subproblem
-                sp_req = generate_subproblem_req(tree, subtree, req)
-                # Calculate original cost if it was never calculated before
-                if (i, j) not in last_solution:
-                    last_solution[(i, j)] = calculate_cost(subtree, sp_req)
+                # END OF DEBUG AREA
+
+                # save the current cost of this pair of clusters
+                curr_value = calculate_cost(subtree, sp_req)
                 # Create vars for MIP
                 o_dict = get_o_u(subgraph, sp_req)
                 x_dict, y_dict, f_dict = defining_vars(subgraph)
@@ -467,30 +457,30 @@ def main(print_logs=False, plot_tree=False):
                 solution_cost = value(problem.objective)
                 print(f'[{i}, {j}]:', LpStatus[problem.status] + ',' + str(solution_cost))
 
-                # If the result is better than the original cost, update
-                # Pode ter um cancelamento castastrófico rolando aqui
-                if abs(last_solution[(i, j)] - solution_cost) >= 2 * sys.float_info.epsilon:
-                    # Update iterative cost
-                    iterative_cost = iterative_cost - last_solution[(i, j)] + solution_cost
-                    last_solution[(i, j)] = solution_cost
+                # Update cost if had a better result
+                if curr_value - solution_cost > 3e-11:
+                    print(f"updated in: {curr_value - solution_cost}")
+                    iterative_cost = iterative_cost - curr_value + solution_cost
                     improved = True
                 else:
-                    print("Optimized but same result was found")
+                    print("Optimized but it wasn't improved")
                     graph = bk_graph
                     tree = nx.subgraph_view(graph, filter_edge=filter_solution)
                     continue
-                # updating graph
+
+                # Update graph to persist chages
                 for e in subgraph.edges():
                     if x_dict[e].varValue == 1.0:
                         graph.edges[e]['in_solution'] = True
                     else:
                         graph.edges[e]['in_solution'] = False
-                # tree = nx.subgraph_view(graph, filter_edge=filter_solution)
+                # Plot the subgraph with the tree in green, for analysis
                 if plot_tree:
                     nx.draw_networkx(subgraph, d_pos)
                     nx.draw_networkx(subgraph, d_pos, edgelist=list(subtree.edges()), edge_color='green')
                     plt.show()
 
+                # Redivide the merged cluster in two new
                 c1, c2 = redivide_tree(subtree)
                 create_dummies(graph, {c: None for c in merged_cluster}, [c1, c2])
 
@@ -517,6 +507,7 @@ def main(print_logs=False, plot_tree=False):
                 clusters[i] = c1
                 clusters[j] = c2
 
+
     k = list(graph.nodes().keys())
     k.sort()
     for i in range(len(k) - 1, 0, -1):
@@ -526,6 +517,7 @@ def main(print_logs=False, plot_tree=False):
             print(f'merging {curr_node} in {father}')
             nx.contracted_nodes(graph, father, curr_node, self_loops=False, copy=False)
 
+    print(f'iteration calc: {iterative_cost}')
     calculate_cost(tree, req, True)
 
 
