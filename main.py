@@ -280,18 +280,18 @@ def select_two_clusters(g, t, c1, c2):
 
 def add_requirements(t, st, base_node, curr_node, prev_node, subproblem_req, requirements):
     list_of_fathers = nx.get_node_attributes(t, 'father')
-    if list_of_fathers[base_node]:
-        for node in st.nodes():
+    for node in st.nodes():
+        if list_of_fathers[node] is not None:
             subproblem_req[base_node][node] += 0.0
-    else:
-        for node in st.nodes():
-            if list_of_fathers[node] is not None:
-                subproblem_req[base_node][node] += 0.0
-            elif list_of_fathers[curr_node] is not None:
-                subproblem_req[base_node][node] += 0.0
-            elif node > base_node:
-                subproblem_req[base_node][node] += \
-                    max(requirements[curr_node][node], requirements[node][curr_node])
+        elif list_of_fathers[curr_node] is not None:
+            subproblem_req[base_node][node] += 0.0
+        elif node > base_node:
+            subproblem_req[base_node][node] += \
+                max(requirements[curr_node][node], requirements[node][curr_node])
+        elif node < base_node:
+            subproblem_req[node][base_node] += \
+                max(requirements[curr_node][node], requirements[node][curr_node])
+
     # Add recursively
     for neighbor in t[curr_node]:
         if neighbor == prev_node:
@@ -315,7 +315,8 @@ def generate_subproblem_req(t, st, requirements):
                 else:
                     # Same thing as above, requirement will be added later
                     subproblem_requirements[u][v] = 0.0
-        # Sum requirements from nodes outside the sub-problem
+    # Sum requirements from nodes outside the sub-problem
+    for u in st.nodes():
         for neighbor in t[u]:
             if neighbor not in st.nodes():
                 add_requirements(t, st, u, neighbor, u, subproblem_requirements, requirements)
@@ -392,7 +393,15 @@ def main(print_logs=False, plot_tree=False):
     last_solution: {(int, int), float} = {}
     print(f'number of clusters: {len(clusters)}')
 
-    if len(clusters) == 1:
+    if len(clusters) <= 2:
+        k = list(graph.nodes().keys())
+        k.sort()
+        for i in range(len(k) - 1, 0, -1):
+            curr_node = k[i]
+            if tree.nodes[curr_node]['father'] is not None:
+                father = tree.nodes[curr_node]['father']
+                print(f'merging {curr_node} in {father}')
+                nx.contracted_nodes(graph, father, curr_node, self_loops=False, copy=False)
         # Generate requirements for subproblem
         # Create vars for MIP
         o_dict = get_o_u(graph, req)
@@ -457,15 +466,15 @@ def main(print_logs=False, plot_tree=False):
                 # Calling solver
                 solve_problem(problem)
                 solution_cost = value(problem.objective)
-                print(f'[{i}, {j}]:', LpStatus[problem.status] + ',' + str(solution_cost))
+                # print(f'[{i}, {j}]:', LpStatus[problem.status] + ',' + str(solution_cost))
 
                 # Update cost if had a better result
-                if curr_value - solution_cost > 3e-10:
-                    print(f"updated in: {curr_value - solution_cost}")
+                if curr_value - solution_cost > 3e-6:
+                    print(f"[{i}, {j}]: {curr_value - solution_cost}")
                     iterative_cost = iterative_cost - curr_value + solution_cost
                     improved = True
                 else:
-                    print("Optimized but it wasn't improved")
+                    # print("Optimized but it wasn't improved")
                     graph = bk_graph
                     tree = nx.subgraph_view(graph, filter_edge=filter_solution)
                     continue
@@ -521,10 +530,14 @@ def main(print_logs=False, plot_tree=False):
     print(f'iteration calc: {iterative_cost}')
     calculate_cost(tree, req, True)
 
-
+# TODO: Erro em STEIB2
 if __name__ == '__main__':
     # Reading instance
-    n_vertex, n_edges, graph, req = read_instance(sys.argv[1])
-    cluster_size = int(sys.argv[2])
+    try:
+        n_vertex, n_edges, graph, req = read_instance(sys.argv[2])
+        cluster_size = int(sys.argv[1])
+    except:
+        print(f'usage: python main.py CLUSTER_SIZE INSTANCE_PATH')
+        exit(1)
     in_cluster = [False for _ in range(n_vertex)]
     main(plot_tree=False, print_logs=False)
