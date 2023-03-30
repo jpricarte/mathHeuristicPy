@@ -474,7 +474,7 @@ def main(print_logs=False, plot_tree=False):
                     iterative_cost = iterative_cost - curr_value + solution_cost
                     improved = True
                 else:
-                    # print("Optimized but it wasn't improved")
+                    # print("Optimized, but it wasn't improved")
                     graph = bk_graph
                     tree = nx.subgraph_view(graph, filter_edge=filter_solution)
                     continue
@@ -518,9 +518,10 @@ def main(print_logs=False, plot_tree=False):
                 clusters[i] = c1
                 clusters[j] = c2
 
-    k = list(graph.nodes().keys())
+    k = list(graph.nodes())
     k.sort()
-    for i in range(len(k) - 1, 0, -1):
+    k.reverse()
+    for i in range(len(k)):
         curr_node = k[i]
         if tree.nodes[curr_node]['father'] is not None:
             father = tree.nodes[curr_node]['father']
@@ -530,7 +531,7 @@ def main(print_logs=False, plot_tree=False):
     print(f'iteration calc: {iterative_cost}')
     calculate_cost(tree, req, True)
 
-# TODO: Erro em STEIB2
+# TODO: Erro em STEIB2: Dummy tem dummy já apagado como pai, o que fazer?
 if __name__ == '__main__':
     # Reading instance
     try:
