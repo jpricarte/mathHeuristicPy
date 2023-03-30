@@ -241,6 +241,11 @@ def create_dummies(g: nx.Graph, ns: [int], cs: [[int]], print_logs=False):
                     global curr_biggest
                     dummy_node = max(g.number_of_nodes(), curr_biggest + 1)
                     curr_biggest = dummy_node
+                    if g.nodes()[n] is not None:
+                        father = g.nodes()[n]['father']
+                    else:
+                        father = n
+                    g.add_node(dummy_node, father=father)
                     g.add_node(dummy_node, father=n)
                     # For each neighbor of n that's in cluster, change edge
                     neighbors = list(g[n].keys())
@@ -430,7 +435,8 @@ def main(print_logs=False, plot_tree=False):
                 bk_graph = graph.copy()
                 # Remove dummies
                 if nodes_to_merge is not None:
-                    nx.contracted_nodes(graph, nodes_to_merge[0], nodes_to_merge[1], False, False)
+                    dummy, father = nodes_to_merge[0], nodes_to_merge[1]
+                    nx.contracted_nodes(graph, dummy, father, False, False)
                     merged_cluster.remove(nodes_to_merge[1])
                 # Create the subtree and the subgraph to work on
                 subtree, subgraph = tree.subgraph(merged_cluster), graph.subgraph(merged_cluster)
@@ -520,13 +526,10 @@ def main(print_logs=False, plot_tree=False):
 
     k = list(graph.nodes())
     k.sort()
-    k.reverse()
-    for i in range(len(k)):
+    for i in range(len(k) - 1, 0, -1):
         curr_node = k[i]
-        if tree.nodes[curr_node]['father'] is not None:
-            father = tree.nodes[curr_node]['father']
-            print(f'merging {curr_node} in {father}')
-            nx.contracted_nodes(graph, father, curr_node, self_loops=False, copy=False)
+        print(f'merging {curr_node} in {father}')
+        nx.contracted_nodes(graph, father, curr_node, self_loops=False, copy=False)
 
     print(f'iteration calc: {iterative_cost}')
     calculate_cost(tree, req, True)
